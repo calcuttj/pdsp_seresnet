@@ -7,7 +7,6 @@ from tensorflow.python.ops.numpy_ops import np_config
 np_config.enable_numpy_behavior()
 #import numpy as np
 
-
 '''
 class Blocks12Concat(layers.Layer):
   def __init__(self):
@@ -22,6 +21,8 @@ class Blocks12Concat(layers.Layer):
   def call(self, inputs):
     x1 = self.branch0_block1(inputs)
 '''
+
+
 
 class NBlock(layers.Layer):
   def __init__(self, depth, nfilters, increased_filters=True):
