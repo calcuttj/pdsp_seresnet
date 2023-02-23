@@ -3,8 +3,8 @@ import time
 import process_hits
 from torch import nn
 from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import ToTensor
+#from torchvision import datasets
+#from torchvision.transforms import ToTensor
 from collections import OrderedDict as ODict
 import numpy as np
 device = 'cpu'
@@ -341,7 +341,7 @@ class SEResnetPDSP_Plane2(nn.Module):
     return y 
 
 
-def train(model, loss_fn, optimizer, pdsp_data, batchsize=32, plane2=False, epochs=1, validate=False, maxbatches=-1):
+def train(model, loss_fn, optimizer, pdsp_data, batchsize=32, plane2=False, epochs=1, validate=False, maxbatches=-1, savename=None, scheduler=None):
 
   import matplotlib.pyplot as plt
   import numpy as np
@@ -355,6 +355,11 @@ def train(model, loss_fn, optimizer, pdsp_data, batchsize=32, plane2=False, epoc
   losses = []
   epochal_avg_loss = []
   validation_losses = []
+
+  device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+  if validate and maxbatches < 0: maxbatches = int(.9*pdsp_data.get_nbatches(batchsize))
+
   for e in range(epochs):
     print('Start epoch', e)
     losses.append([])
@@ -364,16 +369,18 @@ def train(model, loss_fn, optimizer, pdsp_data, batchsize=32, plane2=False, epoc
 
     for batch, (X, y) in enumerate(
         pdsp_data.get_training_batches(batchsize=batchsize, plane2_only=plane2, maxbatches=maxbatches)):
-      #X, y = X.to(device), y.to(device)
 
       # Compute prediction error
       optimizer.zero_grad()
-      pred = model(torch.from_numpy(X).float())
-      loss = loss_fn(pred, torch.from_numpy(y).float())
+      pred = model(torch.from_numpy(X).float().to(device))
+      loss = loss_fn(pred, torch.from_numpy(y).float().to(device))
 
       # Backpropagation
       loss.backward()
       optimizer.step()
+
+      # Adjusting learning rate
+      if scheduler: scheduler.step()
 
       #if batch % 100 == 0:
       loss, current = loss.item(), batch * len(X)
@@ -412,8 +419,15 @@ def train(model, loss_fn, optimizer, pdsp_data, batchsize=32, plane2=False, epoc
       print(f'{batch}/{n_valid_batches}', end='\r')
       n_valid += 1
 
-      pred = model(torch.from_numpy(X).float())
-      loss = loss_fn(pred, torch.from_numpy(y).float())
+      pred = model(torch.from_numpy(X).float().to(device))
+      loss = loss_fn(pred, torch.from_numpy(y).float().to(device))
       #loss, current = loss.item(), batch * len(X)
       validation_losses[-1] += loss.item()
     print(f'Epoch Validation Loss: {validation_losses[-1]/n_valid}')
+ 
+  if savename and type(savename)==str:
+    import h5py as h5 
+    with h5.File(savename, 'a') as h5out:
+      h5out.create_dataset('losses', data=np.array(losses))
+      h5out.create_dataset('epochal_avg_loss', data=np.array(epochal_avg_loss))
+      if validate: h5out.create_dataset('validation_losses', data=(np.array(validation_losses)/n_valid))
