@@ -20,11 +20,16 @@ class PDSPData:
 
     if not linked:
       self.hit_events_0 = np.array(self.h5in['plane_0_hits']['event_id'])
+      print(len(self.hit_events_0))
       self.hit_events_1 = np.array(self.h5in['plane_1_hits']['event_id'])
+      print(len(self.hit_events_1))
       self.hit_events_2 = np.array(self.h5in['plane_2_hits']['event_id'])
+      print(len(self.hit_events_2))
 
       self.nhits = np.array(self.h5in['events']['nhits'])
+      print(len(self.nhits))
       self.events = np.array(self.h5in['events']['event_id'])
+      print(len(self.events))
     else:
       self.keys = self.h5in.keys()
       self.event_keys = []
@@ -45,7 +50,7 @@ class PDSPData:
         n_k_events = len(np.array(self.h5in[f'{k}/events/event_id']))
         self.event_keys += [k]*n_k_events
         self.k_nevents[k] = n_k_events
-        print(f'Added {n_k_events} events from {k}')
+        #print(f'Added {n_k_events} events from {k}')
 
         nhits += [i for i in np.array(self.h5in[f'{k}/events/nhits'])]
       #print(self.event_keys)
@@ -57,6 +62,7 @@ class PDSPData:
     self.hit_events = [self.hit_events_0, self.hit_events_1, self.hit_events_2]
     self.nevents = len(self.events)
 
+    print('getting event')
     if self.nevents > 0:
       self.get_event(0)
 
@@ -111,7 +117,7 @@ class PDSPData:
           n_piminus += [i for i in np.array(self.h5in[f'{k}/truth/n_piminus'])]
           n_pi0 += [i for i in np.array(self.h5in[f'{k}/truth/n_pi0'])]
 
-          print(f'Added {len(sub_pdg)} truths from {k}')
+          #print(f'Added {len(sub_pdg)} truths from {k}')
           self.k_ntruths[k] = len(sub_pdg)
 
       if found_truth:
@@ -158,7 +164,9 @@ class PDSPData:
       key = self.event_keys[eventindex]
       indices = [np.all(i) for i in self.hit_events[pid][key] == self.events[eventindex]]
     else:
+      print('getting indices')
       indices = [np.all(i) for i in self.hit_events[pid] == self.events[eventindex]]
+      print('done')
 
     key = '' if not self.linked else f'{key}/'
 
@@ -212,8 +220,15 @@ class PDSPData:
   
     return plane
 
-  def clean_events(self):
-    indices = np.where((self.pdg != 211) & (self.pdg != -13))
+  def clean_events(self, check_nhits=True):
+  ##Check this -- not working
+    nohits = np.any(self.nhits == 0, axis=1)
+    print(len(nohits))
+    indices = np.where(
+      ((self.pdg != 211) & (self.pdg != -13)) |
+      (nohits if check_nhits else check_nhits)
+    )
+
     self.pdg = np.delete(self.pdg, indices)
     self.topos = np.delete(self.topos, indices)
     self.interacted = np.delete(self.interacted, indices)
