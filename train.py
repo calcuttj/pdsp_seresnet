@@ -92,7 +92,7 @@ def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False, m
   #Make loss function, optimizer, and scheduler (if applicable)
   loss_fn = nn.CrossEntropyLoss()
   optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-  scheduler= None #TODO
+  scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.001)
 
   #Set up outputs
   losses = []
