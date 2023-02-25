@@ -9,11 +9,20 @@ from argparse import ArgumentParser as ap
 def get_device():
   return 'cuda' if torch.cuda.is_available() else 'cpu'
 
+def get_splits(size, fracs=[.9, .1]):
+  results = [int(fracs[0] * size)]
+  results.append(size - results[0])
+  return results
+
 def make_loaders(dataset, batch_size=32, validate=False):
+
   if validate:
     from torch.utils.data import random_split
+    print(len(dataset))
+    splits = get_splits(len(dataset)) 
+    print(splits)
     train_dataset, val_dataset = random_split(
-        dataset, [int(p * len(ds)) for p in [0.9, 0.1]])
+        dataset, splits)
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     val_loader = DataLoader(
@@ -27,12 +36,37 @@ def make_loaders(dataset, batch_size=32, validate=False):
   return (train_loader, val_loader)
 
 
-def train_loop(loader, model, loss_fn, optimizer, losses_list, scheduler=None):
+def validate_loop(loader, model, loss_fn, losses_list, acc_list, max_iter=-1):
+  device = get_device()
+  size = len(loader.dataset)
+  losses_list.append([])
+  correct = 0
+
+  with torch.no_grad():
+    for batch, (x, y) in enumerate(loader):
+      if max_iter > 0 and batch >= max_iter: break
+      # Compute prediction error
+      pred = model(x.float().to(device))
+      loss = loss_fn(pred, y.float().to(device))
+      loss, current = loss.item(), batch * len(x)
+      losses_list[-1].append(loss)
+      print(pred, y)
+      print(pred.argmax(1), y.argmax(1))
+      correct += (pred.argmax(1) == y.argmax(1)).type(torch.float).sum().item()
+      print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
+
+  correct /= size
+  print(f'Validation accuracy: {100.*correct}')
+  acc_list.append(correct)
+
+
+def train_loop(loader, model, loss_fn, optimizer, losses_list, scheduler=None, max_iter=-1):
   device = get_device()
 
   size = len(loader.dataset)
   losses_list.append([])
   for batch, (x, y) in enumerate(loader):
+    if max_iter > 0 and batch >= max_iter: break
 
     # Compute prediction error
     pred = model(x.float().to(device))
@@ -50,7 +84,7 @@ def train_loop(loader, model, loss_fn, optimizer, losses_list, scheduler=None):
     losses_list[-1].append(loss)
 
 
-def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False):
+def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False, max_iter=-1):
 
   #Get train and validate (if available) data loaders
   train_loader, val_loader = make_loaders(dataset, validate=validate)
@@ -62,14 +96,18 @@ def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False):
 
   #Set up outputs
   losses = []
-  if validate: val_losses = []
+  if validate:
+    val_losses = []
+    accuracies = []
 
   #Start epoch loop
   for e in range(epochs):
     print('Start epoch', e)
 
-    train_loop(train_loader, model, loss_fn, optimizer, scheduler=scheduler)
-    if validate: pass
+    train_loop(train_loader, model, loss_fn, optimizer, losses, scheduler=scheduler, max_iter=max_iter)
+    if validate:
+      print('Validating')
+      validate_loop(val_loader, model, loss_fn, val_losses, accuracies, max_iter=max_iter)
   
   if save:
     import h5py as h5 
@@ -77,7 +115,9 @@ def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False):
     
     with h5.File(f'pdsp_training_losses_{calendar.timegm(time.gmtime())}.h5', 'a') as h5out:
       h5out.create_dataset('losses', data=np.array(losses))
-      if validate: pass
+      if validate:
+        h5out.create_dataset('val_losses', data=np.array(val_losses))
+        h5out.create_dataset('accuracies', data=np.array(accuracies))
     
 if __name__ == '__main__':
   parser = ap()
