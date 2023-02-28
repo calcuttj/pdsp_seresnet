@@ -246,6 +246,9 @@ class PDSPData:
   def get_nbatches(self, batchsize=2):
     return ceil(self.nevents/batchsize)
 
+  def get_sample_weights(self):
+    return 1./np.array([self.topos[self.topos == i].size for i in range(4)])
+
   def get_training_batches(self, batchsize=2, plane2_only=False, use_width=False, maxbatches=-1, startbatch=0):
 
     for i in range(startbatch, ceil(self.nevents/batchsize)):
