@@ -87,7 +87,18 @@ def train_loop(loader, model, loss_fn, optimizer, losses_list, scheduler=None, m
     losses_list[-1].append(loss)
 
 
-def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False, max_iter=-1):
+def save_checkpoint(model, optimizer, scheduler, epoch):
+  torch.save(
+    {
+      'epoch':epoch,
+      'model_state_dict':model.state_dict(),
+      'optimizer_state_dict':optimizer.state_dict(),
+      'scheduler_state_dict':scheduler.state_dict(),
+    },
+    'checkpoint.pt'
+  )
+
+def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10):
 
   #Get train and validate (if available) data loaders
   train_loader, val_loader = make_loaders(dataset, validate=validate)
@@ -108,6 +119,9 @@ def train(model, dataset, validate=False, batch_size=32, epochs=1, save=False, m
     print('Start epoch', e)
 
     train_loop(train_loader, model, loss_fn, optimizer, losses, scheduler=scheduler, max_iter=max_iter)
+    if e % save_every == 0:
+      save_checkpoint(model, optimizer, scheduler, e)
+
     if validate:
       print('Validating')
       validate_loop(val_loader, model, loss_fn, val_losses, accuracies, max_iter=max_iter)
@@ -130,6 +144,7 @@ if __name__ == '__main__':
   parser.add_argument('--epochs', type=int, default=1)
   parser.add_argument('--save', action='store_true')
   parser.add_argument('--validate', action='store_true')
+  parser.add_argument('--cp_freq', type=int, default=10)
   args = parser.parse_args()
 
   pdsp_dataset = PDSPDataset(args.f)
@@ -146,5 +161,6 @@ if __name__ == '__main__':
       batch_size=args.batchsize,
       epochs=args.epochs,
       save=args.save,
+      save_every=args.cp_freq,
   )
 
