@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 import h5py as h5
 from torch.utils.data import Dataset
 from process_hits import PDSPData

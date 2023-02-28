@@ -46,13 +46,16 @@ def validate_loop(loader, model, loss_fn, losses_list, acc_list, max_iter=-1):
     for batch, (x, y) in enumerate(loader):
       if max_iter > 0 and batch >= max_iter: break
       # Compute prediction error
-      pred = model(x.float().to(device))
-      loss = loss_fn(pred, y.float().to(device))
+
+      x = x.float().to(device)
+      y = y.long().argmax(1).to(device)
+
+      pred = model(x)
+      loss = loss_fn(pred, y)
       loss, current = loss.item(), batch * len(x)
       losses_list[-1].append(loss)
-      print(pred, y)
-      print(pred.argmax(1), y.argmax(1))
-      correct += (pred.argmax(1) == y.argmax(1)).type(torch.float).sum().item()
+      print(pred.argmax(1), y)
+      correct += (pred.argmax(1) == y).type(torch.float).sum().item()
       print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
 
   correct /= size
@@ -70,7 +73,7 @@ def train_loop(loader, model, loss_fn, optimizer, losses_list, scheduler=None, m
 
     # Compute prediction error
     pred = model(x.float().to(device))
-    loss = loss_fn(pred, y.float().to(device))
+    loss = loss_fn(pred, y.long().argmax(1).to(device))
 
     # Backpropagation
     loss.backward()
@@ -136,7 +139,7 @@ if __name__ == '__main__':
     print('Found cuda')
     plane2_net.to('cuda')
 
-  train.train(
+  train(
       plane2_net,
       pdsp_dataset,
       validate=args.validate,
