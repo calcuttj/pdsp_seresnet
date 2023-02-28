@@ -10,80 +10,97 @@ import matplotlib.pyplot as plt
 
 class PDSPData:
   def __init__(self, filename, maxtime=913, linked=False):
-    self.h5in = h5.File(filename)
-    self.tp = np.dtype([('integral', 'f4'),
-                        ('rms', 'f4'), ('time', 'f4'), ('wire', 'f4')])
+    with h5.File(filename) as h5in:
+    #h5in = h5.File(filename)
+      self.tp = np.dtype([('integral', 'f4'),
+                          ('rms', 'f4'), ('time', 'f4'), ('wire', 'f4')])
 
-    self.linked = linked
-    self.loaded_truth = False
-    self.maxtime=maxtime
+      self.linked = linked
+      self.loaded_truth = False
+      self.data = dict()
+      self.maxtime=maxtime
 
-    if not linked:
-      self.hit_events_0 = np.array(self.h5in['plane_0_hits']['event_id'])
-      print(len(self.hit_events_0))
-      self.hit_events_1 = np.array(self.h5in['plane_1_hits']['event_id'])
-      print(len(self.hit_events_1))
-      self.hit_events_2 = np.array(self.h5in['plane_2_hits']['event_id'])
-      print(len(self.hit_events_2))
+      if not linked:
+        self.hit_events_0 = np.array(h5in['plane_0_hits']['event_id'])
+        print(len(self.hit_events_0))
+        self.hit_events_1 = np.array(h5in['plane_1_hits']['event_id'])
+        print(len(self.hit_events_1))
+        self.hit_events_2 = np.array(h5in['plane_2_hits']['event_id'])
+        print(len(self.hit_events_2))
 
-      self.nhits = np.array(self.h5in['events']['nhits'])
-      print(len(self.nhits))
-      self.events = np.array(self.h5in['events']['event_id'])
-      print(len(self.events))
-    else:
-      self.keys = self.h5in.keys()
-      self.event_keys = []
-      nhits = []
-      self.hit_events_0 = dict()
-      self.hit_events_1 = dict()
-      self.hit_events_2 = dict()
+        self.nhits = np.array(h5in['events']['nhits'])
+        print(len(self.nhits))
+        self.events = np.array(h5in['events']['event_id'])
+        print(len(self.events))
 
-      self.k_nevents = dict()
-
-      events = []
-      for k in self.keys:
-        self.hit_events_0[k] = np.array(self.h5in[f'{k}/plane_0_hits/event_id'])
-        self.hit_events_1[k] = np.array(self.h5in[f'{k}/plane_1_hits/event_id'])
-        self.hit_events_2[k] = np.array(self.h5in[f'{k}/plane_2_hits/event_id'])
-
-        events += [i for i in np.array(self.h5in[f'{k}/events/event_id'])]
-        n_k_events = len(np.array(self.h5in[f'{k}/events/event_id']))
-        self.event_keys += [k]*n_k_events
-        self.k_nevents[k] = n_k_events
-        #print(f'Added {n_k_events} events from {k}')
-
-        nhits += [i for i in np.array(self.h5in[f'{k}/events/nhits'])]
-      #print(self.event_keys)
+        for n in self.tp.names:
+          self.data[n] = []
+          for pid in range(3):
+            self.data[n].append(np.array(h5in[f'plane_{pid}_hits'][n]))
 
 
-      self.nhits = np.array(nhits)
-      self.events = np.array(events)
+      else:
+        self.keys = h5in.keys()
+        self.event_keys = []
+        nhits = []
+        self.hit_events_0 = dict()
+        self.hit_events_1 = dict()
+        self.hit_events_2 = dict()
 
-    self.hit_events = [self.hit_events_0, self.hit_events_1, self.hit_events_2]
-    self.nevents = len(self.events)
+        self.k_nevents = dict()
 
-    print('getting event')
-    if self.nevents > 0:
-      self.get_event(0)
+        events = []
+        for k in self.keys:
+          self.hit_events_0[k] = np.array(h5in[f'{k}/plane_0_hits/event_id'])
+          self.hit_events_1[k] = np.array(h5in[f'{k}/plane_1_hits/event_id'])
+          self.hit_events_2[k] = np.array(h5in[f'{k}/plane_2_hits/event_id'])
+
+          events += [i for i in np.array(h5in[f'{k}/events/event_id'])]
+          n_k_events = len(np.array(h5in[f'{k}/events/event_id']))
+          self.event_keys += [k]*n_k_events
+          self.k_nevents[k] = n_k_events
+          #print(f'Added {n_k_events} events from {k}')
+          for n in self.tp.names:
+            self.data[f'{k}/{n}'] = []
+            for pid in range(3):
+              self.data[f'{k}/{n}'].append(np.array(h5in[f'{k}/plane_{pid}_hits'][n]))
+
+
+
+          nhits += [i for i in np.array(h5in[f'{k}/events/nhits'])]
+        #print(self.event_keys)
+
+
+        self.nhits = np.array(nhits)
+        self.events = np.array(events)
+
+      self.hit_events = [self.hit_events_0, self.hit_events_1, self.hit_events_2]
+      self.nevents = len(self.events)
+
+      print(f'Loading truth')
+      self.load_truth(h5in)
+      #print('getting event')
+      #if self.nevents > 0:
+      #  self.get_event(0)
 
   def get_indices(self, pdg):
     return [i for i in range(len(self.pdg)) if self.pdg[i][0] == pdg]
 
-  def load_truth(self):
+  def load_truth(self, h5in):
     if self.loaded_truth:
       print('Already loaded truth info')
       return
     self.loaded_truth = True
     if not self.linked:
-      if 'truth' in self.h5in.keys():
+      if 'truth' in h5in.keys():
         found_truth = True
-        self.pdg = np.array(self.h5in['truth']['pdg']) 
-        self.interacted = np.array(self.h5in['truth']['interacted'])
-        self.n_neutron = np.array(self.h5in['truth']['n_neutron'])
-        self.n_proton = np.array(self.h5in['truth']['n_proton'])
-        self.n_piplus = np.array(self.h5in['truth']['n_piplus'])
-        self.n_piminus = np.array(self.h5in['truth']['n_piminus'])
-        self.n_pi0 = np.array(self.h5in['truth']['n_pi0'])
+        self.pdg = np.array(h5in['truth']['pdg']) 
+        self.interacted = np.array(h5in['truth']['interacted'])
+        self.n_neutron = np.array(h5in['truth']['n_neutron'])
+        self.n_proton = np.array(h5in['truth']['n_proton'])
+        self.n_piplus = np.array(h5in['truth']['n_piplus'])
+        self.n_piminus = np.array(h5in['truth']['n_piminus'])
+        self.n_pi0 = np.array(h5in['truth']['n_pi0'])
 
         self.pdg = np.ndarray.flatten(self.pdg)
         self.interacted = np.ndarray.flatten(self.interacted)
@@ -104,18 +121,18 @@ class PDSPData:
       n_pi0 = []
       self.k_ntruths = dict()
       for k in self.keys:
-        if 'truth' in self.h5in[f'{k}'].keys():
+        if 'truth' in h5in[f'{k}'].keys():
           found_truth = True
 
-          sub_pdg = [i for i in np.array(self.h5in[f'{k}/truth/pdg'])]
+          sub_pdg = [i for i in np.array(h5in[f'{k}/truth/pdg'])]
 
           pdg += sub_pdg
-          interacted += [i for i in np.array(self.h5in[f'{k}/truth/interacted'])]
-          n_neutron += [i for i in np.array(self.h5in[f'{k}/truth/n_neutron'])]
-          n_proton += [i for i in np.array(self.h5in[f'{k}/truth/n_proton'])]
-          n_piplus += [i for i in np.array(self.h5in[f'{k}/truth/n_piplus'])]
-          n_piminus += [i for i in np.array(self.h5in[f'{k}/truth/n_piminus'])]
-          n_pi0 += [i for i in np.array(self.h5in[f'{k}/truth/n_pi0'])]
+          interacted += [i for i in np.array(h5in[f'{k}/truth/interacted'])]
+          n_neutron += [i for i in np.array(h5in[f'{k}/truth/n_neutron'])]
+          n_proton += [i for i in np.array(h5in[f'{k}/truth/n_proton'])]
+          n_piplus += [i for i in np.array(h5in[f'{k}/truth/n_piplus'])]
+          n_piminus += [i for i in np.array(h5in[f'{k}/truth/n_piminus'])]
+          n_pi0 += [i for i in np.array(h5in[f'{k}/truth/n_pi0'])]
 
           #print(f'Added {len(sub_pdg)} truths from {k}')
           self.k_ntruths[k] = len(sub_pdg)
@@ -175,9 +192,11 @@ class PDSPData:
 
     for n in self.tp.names:
       if n == 'event_id':
-        data[n] = np.array(self.h5in[f'{key}plane_{pid}_hits'][n])[indices]
+        #data[n] = np.array(self.h5in[f'{key}plane_{pid}_hits'][n])[indices]
+        data[n] = self.data[f'{key}{n}'][pid][indices]
       else:
-        data[n] = np.array(self.h5in[f'{key}plane_{pid}_hits'][n])[indices].reshape(self.nhits[eventindex][pid])
+        #data[n] = np.array(self.h5in[f'{key}plane_{pid}_hits'][n])[indices].reshape(self.nhits[eventindex][pid])
+        data[n] = self.data[f'{key}{n}'][pid][indices].reshape(self.nhits[eventindex][pid])
     return data
 
   def get_event(self, eventindex):

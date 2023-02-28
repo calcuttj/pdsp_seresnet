@@ -9,8 +9,7 @@ class PDSPDataset(Dataset):
 
     print(f'Initializing PDSPData from {input_file}')
     self.pdsp_data = PDSPData(input_file, maxtime=500, linked=True)
-    print(f'Loading truth')
-    self.pdsp_data.load_truth()
+    #self.pdsp_data.load_truth()
     print(f'Cleaning events')
     self.pdsp_data.clean_events()
 
