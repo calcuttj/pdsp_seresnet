@@ -5,13 +5,13 @@ from process_hits import PDSPData
 import numpy as np
 
 class PDSPDataset(Dataset):
-  def __init__(self, input_file, plane_2=True, use_width=True):
+  def __init__(self, pdsp_data, plane_2=True, use_width=True):
 
-    print(f'Initializing PDSPData from {input_file}')
-    self.pdsp_data = PDSPData(input_file, maxtime=500, linked=True)
-    #self.pdsp_data.load_truth()
-    print(f'Cleaning events')
-    self.pdsp_data.clean_events()
+    #print(f'Initializing PDSPData from {input_file}')
+    self.pdsp_data = pdsp_data #PDSPData(maxtime=500, linked=True)
+    #self.pdsp_data.load_h5(input_file)
+    #print(f'Cleaning events')
+    #self.pdsp_data.clean_events()
 
     #Set if we just want to look at plane_2
     self.plane_2 = plane_2

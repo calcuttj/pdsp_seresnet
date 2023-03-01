@@ -1,4 +1,5 @@
 from pdsp_data import PDSPDataset
+import process_hits
 import torch
 from torch import nn
 import numpy as np
@@ -11,6 +12,23 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 import os
+
+class MPOutputs:
+  def __init__(self, world_size):
+    self.world_size = world_size
+    self.losses = []
+    self.val_losses = []
+    self.accuracies = []
+    for i in range(world_size):
+      self.losses.append([])
+      self.val_losses.append([])
+      self.accuracies.append([])
+
+  def __print__(self):
+    print(self.losses)
+    print(self.val_losses)
+    print(self.accuracies)
+
 
 def get_device():
   return 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -34,14 +52,14 @@ def make_loaders(dataset, batch_size=32, validate=False):
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        #sampler=DistributedSampler(dataset),
+        sampler=DistributedSampler(train_dataset),
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        #sampler=DistributedSampler(dataset),
+        sampler=DistributedSampler(val_dataset),
     )
 
   else:
@@ -50,17 +68,16 @@ def make_loaders(dataset, batch_size=32, validate=False):
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        #sampler=DistributedSampler(dataset)
+        sampler=DistributedSampler(dataset)
     )
     val_loader = None
 
   return (train_loader, val_loader)
 
 
-def validate_loop(loader, model, loss_fn, losses_list, acc_list, max_iter=-1):
+def validate_loop(rank, loader, model, loss_fn, max_iter=-1):
   device = get_device()
   size = len(loader.dataset)
-  losses_list.append([])
   correct = 0
 
   with torch.no_grad():
@@ -68,34 +85,33 @@ def validate_loop(loader, model, loss_fn, losses_list, acc_list, max_iter=-1):
       if max_iter > 0 and batch >= max_iter: break
       # Compute prediction error
 
-      x = x.float().to(device)
-      y = y.long().argmax(1).to(device)
+      x = x.float().to(rank)
+      y = y.long().argmax(1).to(rank)
 
       pred = model(x)
       loss = loss_fn(pred, y)
       loss, current = loss.item(), batch * len(x)
-      losses_list[-1].append(loss)
       print(pred.argmax(1), y)
       correct += (pred.argmax(1) == y).type(torch.float).sum().item()
       print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
 
   correct /= size
   print(f'Validation accuracy: {100.*correct}')
-  acc_list.append(correct)
 
 
-def train_loop(loader, model, loss_fn, optimizer, losses_list, lrs_list, scheduler=None, max_iter=-1):
+def train_loop(rank, loader, model, loss_fn, optimizer, losses_list, lrs_list, scheduler=None, max_iter=-1):
   device = get_device()
 
   size = len(loader.dataset)
+
   losses_list.append([])
   lrs_list.append([])
   for batch, (x, y) in enumerate(loader):
     if max_iter > 0 and batch >= max_iter: break
 
     # Compute prediction error
-    pred = model(x.float().to(device))
-    loss = loss_fn(pred, y.long().argmax(1).to(device))
+    pred = model(x.float().to(rank))
+    loss = loss_fn(pred, y.long().argmax(1).to(rank))
 
     # Backpropagation
     loss.backward()
@@ -108,7 +124,7 @@ def train_loop(loader, model, loss_fn, optimizer, losses_list, lrs_list, schedul
 
     loss, current = loss.item(), batch * len(x)
     print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
-    print(pred, y)
+    #print(pred, y)
     print(pred.argmax(1), y.argmax(1))
     losses_list[-1].append(loss)
 
@@ -137,8 +153,8 @@ def ddp_setup(rank, world_size):
     os.environ["MASTER_PORT"] = "12355"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
-def setup_trainers(rank=0, weights=[], schedule=False, do_ddp=False):
-  plane2_net = seresnet(nfilters=args.filters)
+def setup_trainers(filters, rank=0, weights=[], schedule=False, do_ddp=False):
+  plane2_net = seresnet(nfilters=filters)
   if torch.cuda.is_available():
     print('Found cuda. Sending to gpu', rank)
     plane2_net.to(rank)
@@ -150,7 +166,7 @@ def setup_trainers(rank=0, weights=[], schedule=False, do_ddp=False):
     print('Weighting', weights)
     loss_fn = nn.CrossEntropyLoss(weight=torch.tensor(weights).float().to(rank))
 
-  optimizer = torch.optim.SGD(plane2_net.parameters(), lr=0.001, momentum=0.9)
+  optimizer = torch.optim.SGD(plane2_net.parameters(), lr=0.0001, momentum=0.9)
   if do_ddp: plane2_net = DDP(plane2_net, device_ids=[rank])
 
   scheduler = (
@@ -162,14 +178,14 @@ def setup_trainers(rank=0, weights=[], schedule=False, do_ddp=False):
   return (plane2_net, loss_fn, optimizer, scheduler)
   
 
-def train(rank: int, world_size: int, dataset, validate=False, batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10, weights=[], schedule=False):
+def train(rank: int, filters, world_size: int, dataset, validate=False, batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10, weights=[], schedule=False):
 
-  #ddp_setup(rank, world_size)
+  ddp_setup(rank, world_size)
 
   #Get train and validate (if available) data loaders
   train_loader, val_loader = make_loaders(dataset, batch_size=batch_size, validate=validate)
 
-  model, loss_fn, optimizer, scheduler = setup_trainers(rank, weights, schedule, do_ddp=False)
+  model, loss_fn, optimizer, scheduler = setup_trainers(filters, rank, weights, schedule, do_ddp=True)
 
   #Set up outputs
   losses = []
@@ -182,13 +198,13 @@ def train(rank: int, world_size: int, dataset, validate=False, batch_size=32, ep
   for e in range(epochs):
     print('Start epoch', e)
 
-    train_loop(train_loader, model, loss_fn, optimizer, losses, lrs, scheduler=scheduler, max_iter=max_iter)
+    train_loop(rank, train_loader, model, loss_fn, optimizer, losses, lrs, scheduler=scheduler, max_iter=max_iter)
     if e % save_every == 0 and rank == 0:
       save_checkpoint(model, optimizer, scheduler, e)
 
     if validate:
       print('Validating')
-      validate_loop(val_loader, model, loss_fn, val_losses, accuracies, max_iter=max_iter)
+      validate_loop(rank, val_loader, model, loss_fn, max_iter=max_iter)
   
   if save and rank == 0:
     import h5py as h5 
@@ -200,7 +216,7 @@ def train(rank: int, world_size: int, dataset, validate=False, batch_size=32, ep
       if validate:
         h5out.create_dataset('val_losses', data=np.array(val_losses))
         h5out.create_dataset('accuracies', data=np.array(accuracies))
-  #destroy_process_group()
+  destroy_process_group()
     
 if __name__ == '__main__':
   parser = ap()
@@ -215,7 +231,11 @@ if __name__ == '__main__':
   parser.add_argument('--schedule', action='store_true')
   args = parser.parse_args()
 
-  pdsp_dataset = PDSPDataset(args.f)
+
+  pdsp_data = process_hits.PDSPData(maxtime=500, linked=True)
+  pdsp_data.load_h5(args.f)
+  pdsp_data.clean_events()
+  pdsp_dataset = PDSPDataset(pdsp_data)
   print(pdsp_dataset.pdsp_data.get_sample_weights())
 
   '''
@@ -225,9 +245,11 @@ if __name__ == '__main__':
     plane2_net.to('cuda')'''
 
   world_size = torch.cuda.device_count() if torch.cuda.is_available else 1
+  '''
   train(
       #plane2_net,
       0,
+      args.filters,
       world_size,
       pdsp_dataset,
       validate=args.validate,
@@ -238,10 +260,11 @@ if __name__ == '__main__':
       save_every=args.cp_freq,
       schedule=args.schedule,
   )
-  
   '''
+
   mp.spawn(train,
     args=(
+      args.filters,
       world_size,
       pdsp_dataset,
       args.validate,
@@ -253,4 +276,4 @@ if __name__ == '__main__':
       (pdsp_dataset.pdsp_data.get_sample_weights() if args.weight else []),
       args.schedule,
     ), nprocs=world_size)
-    '''
+
