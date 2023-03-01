@@ -75,11 +75,12 @@ def make_loaders(dataset, batch_size=32, validate=False):
   return (train_loader, val_loader)
 
 
-def validate_loop(rank, loader, model, loss_fn, max_iter=-1):
+def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,  max_iter=-1):
   device = get_device()
   size = len(loader.dataset)
   correct = 0
-
+  
+  losses_list.append([])
   with torch.no_grad():
     for batch, (x, y) in enumerate(loader):
       if max_iter > 0 and batch >= max_iter: break
@@ -91,11 +92,13 @@ def validate_loop(rank, loader, model, loss_fn, max_iter=-1):
       pred = model(x)
       loss = loss_fn(pred, y)
       loss, current = loss.item(), batch * len(x)
+      losses_list[-1].append(loss)
       print(pred.argmax(1), y)
       correct += (pred.argmax(1) == y).type(torch.float).sum().item()
       print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
 
   correct /= size
+  acc_list.append(correct)
   print(f'Validation accuracy: {100.*correct}')
 
 
@@ -204,7 +207,7 @@ def train(rank: int, filters, world_size: int, dataset, validate=False, batch_si
 
     if validate:
       print('Validating')
-      validate_loop(rank, val_loader, model, loss_fn, max_iter=max_iter)
+      validate_loop(rank, val_loader, model, loss_fn, val_losses, accuracies, max_iter=max_iter)
   
   if save and rank == 0:
     import h5py as h5 
