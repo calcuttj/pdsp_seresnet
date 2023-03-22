@@ -192,7 +192,9 @@ def setup_trainers(filters, rank=0, weights=[], schedule=False, do_ddp=False, lo
   return (plane2_net, loss_fn, optimizer, scheduler)
   
 
-def train(rank: int, filters, world_size: int, dataset, validate=False, batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10, weights=[], schedule=False, load=None):
+def train(rank: int, filters, world_size: int, dataset, validate=False,
+          batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10,
+          weights=[], schedule=False, load=None):
 
   ddp_setup(rank, world_size)
 
@@ -220,6 +222,7 @@ def train(rank: int, filters, world_size: int, dataset, validate=False, batch_si
 
     train_loop(rank, train_loader, model, loss_fn, optimizer, losses, lrs, scheduler=scheduler, max_iter=max_iter)
     if (e % save_every == 0 or e == epochs-1) and rank == 0:
+      print('Saving at epoch', e)
       save_checkpoint(model, optimizer, scheduler, e)
 
     if validate and rank == 0:
