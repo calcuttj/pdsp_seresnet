@@ -84,6 +84,8 @@ def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,
   correct = 0
   
   losses_list.append([])
+  pred_list.append([])
+  truth_list.append([])
   with torch.no_grad():
     for batch, (x, y) in enumerate(loader):
       if max_iter > 0 and batch >= max_iter: break
@@ -98,6 +100,8 @@ def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,
       losses_list[-1].append(loss)
       print(pred.argmax(1), y)
       correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+      pred_list[-1].append(pred.argmax(1).numpy())
+      truth_list[-1].append(y.numpy())
       print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
 
   correct /= size
