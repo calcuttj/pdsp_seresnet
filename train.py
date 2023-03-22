@@ -76,7 +76,9 @@ def make_loaders(dataset, batch_size=32, validate=False):
   return (train_loader, val_loader)
 
 
-def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,  max_iter=-1):
+def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,
+                  pred_list, truth_list,
+                  max_iter=-1):
   device = get_device()
   size = len(loader.dataset)
   correct = 0
@@ -103,7 +105,8 @@ def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,  max_iter
   print(f'Validation accuracy: {100.*correct}')
 
 
-def train_loop(rank, loader, model, loss_fn, optimizer, losses_list, lrs_list, scheduler=None, max_iter=-1):
+def train_loop(rank, loader, model, loss_fn, optimizer, losses_list, lrs_list,
+               scheduler=None, max_iter=-1):
   device = get_device()
 
   size = len(loader.dataset)
@@ -212,9 +215,13 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
   #Set up outputs
   losses = []
   lrs = []
+  preds = []
+  truths = []
   if validate:
     val_losses = []
     accuracies = []
+    val_preds = []
+    val_truths = []
 
   #Start epoch loop
   for e in range(epochs):
@@ -227,7 +234,9 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
 
     if validate and rank == 0:
       print('Validating')
-      validate_loop(rank, val_loader, model, loss_fn, val_losses, accuracies, max_iter=max_iter)
+      validate_loop(rank, val_loader, model, loss_fn, val_losses, accuracies,
+                    val_preds, val_truths,
+                    max_iter=max_iter)
 
     if scheduler:
       scheduler.step()
@@ -240,6 +249,8 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
       if validate:
         h5out.create_dataset('val_losses', data=np.array(val_losses))
         h5out.create_dataset('accuracies', data=np.array(accuracies))
+        h5out.create_dataset('val_preds', data=np.array(val_preds))
+        h5out.create_dataset('val_truths', data=np.array(val_truths))
   destroy_process_group()
     
 if __name__ == '__main__':
