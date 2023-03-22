@@ -100,8 +100,8 @@ def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,
       losses_list[-1].append(loss)
       print(pred.argmax(1), y)
       correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-      pred_list[-1].append(pred.argmax(1).numpy())
-      truth_list[-1].append(y.numpy())
+      pred_list[-1].append(pred.argmax(1).cpu().numpy())
+      truth_list[-1].append(y.cpu().numpy())
       print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
 
   correct /= size
@@ -110,12 +110,15 @@ def validate_loop(rank, loader, model, loss_fn, losses_list, acc_list,
 
 
 def train_loop(rank, loader, model, loss_fn, optimizer, losses_list, lrs_list,
+               pred_list, truth_list,
                scheduler=None, max_iter=-1):
   device = get_device()
 
   size = len(loader.dataset)
 
   losses_list.append([])
+  pred_list.append([])
+  truth_list.append([])
   #lrs_list.append([])
   for batch, (x, y) in enumerate(loader):
     if max_iter > 0 and batch >= max_iter: break
@@ -140,6 +143,8 @@ def train_loop(rank, loader, model, loss_fn, optimizer, losses_list, lrs_list,
     print(f"loss: {loss:>7f}  [{current:>5d}/{size}]")
     #print(pred, y)
     print(pred.argmax(1), y.argmax(1))
+    pred_list[-1].append(pred.argmax(1).cpu().numpy())
+    truth_list[-1].append(y.argmax(1).cpu().numpy())
     losses_list[-1].append(loss)
 
 
@@ -231,7 +236,9 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
   for e in range(epochs):
     print('Start epoch', e)
 
-    train_loop(rank, train_loader, model, loss_fn, optimizer, losses, lrs, scheduler=scheduler, max_iter=max_iter)
+    train_loop(rank, train_loader, model, loss_fn, optimizer, losses, lrs,
+               preds, truths,
+               scheduler=scheduler, max_iter=max_iter)
     if (e % save_every == 0 or e == epochs-1) and rank == 0:
       print('Saving at epoch', e)
       save_checkpoint(model, optimizer, scheduler, e)
@@ -249,6 +256,8 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
     
     with h5.File(f'pdsp_training_losses_{calendar.timegm(time.gmtime())}.h5', 'a') as h5out:
       h5out.create_dataset('losses', data=np.array(losses))
+      h5out.create_dataset('preds', data=np.array(preds))
+      h5out.create_dataset('truths', data=np.array(truths))
       h5out.create_dataset('lrs', data=np.array(lrs))
       if validate:
         h5out.create_dataset('val_losses', data=np.array(val_losses))
