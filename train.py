@@ -203,6 +203,14 @@ def setup_trainers(filters, rank=0, weights=[], schedule=False, do_ddp=False, lo
 
   return (plane2_net, loss_fn, optimizer, scheduler)
   
+def pad_output(preds):
+  padded_preds = np.zeros((len(preds), len(preds[0]),
+			   np.max([len(p) for p in preds[0]])))
+  for i in range(len(preds)):
+    for j in range(len(preds[i])):
+      p = preds[i][j]
+      padded_preds[i,j,:len(p)] = p
+  return padded_preds
 
 def train(rank: int, filters, world_size: int, dataset, validate=False,
           batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10,
@@ -256,14 +264,19 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
     
     with h5.File(f'pdsp_training_losses_{calendar.timegm(time.gmtime())}.h5', 'a') as h5out:
       h5out.create_dataset('losses', data=np.array(losses))
-      h5out.create_dataset('preds', data=np.array(preds))
-      h5out.create_dataset('truths', data=np.array(truths))
+
+      padded_preds = pad_output(preds)
+      padded_truths = pad_output(truths)
+      h5out.create_dataset('preds', data=np.array(padded_preds))
+      h5out.create_dataset('truths', data=np.array(padded_truths))
       h5out.create_dataset('lrs', data=np.array(lrs))
       if validate:
+        padded_val_preds = pad_output(val_preds)
+        padded_val_truths = pad_output(val_truths)
         h5out.create_dataset('val_losses', data=np.array(val_losses))
         h5out.create_dataset('accuracies', data=np.array(accuracies))
-        h5out.create_dataset('val_preds', data=np.array(val_preds))
-        h5out.create_dataset('val_truths', data=np.array(val_truths))
+        h5out.create_dataset('val_preds', data=np.array(padded_val_preds))
+        h5out.create_dataset('val_truths', data=np.array(padded_val_truths))
   destroy_process_group()
     
 if __name__ == '__main__':
