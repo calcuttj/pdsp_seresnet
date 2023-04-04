@@ -5,6 +5,7 @@ import torch
 from torch import nn
 import numpy as np
 from pdsp_resnet_pt import SEResnetPDSP_Plane2 as seresnet
+from pdsp_resnet_pt import SEResnetPDSP as full_seresnet
 from torch.utils.data import DataLoader
 from argparse import ArgumentParser as ap
 
@@ -172,11 +173,12 @@ def ddp_setup(rank, world_size):
     os.environ["MASTER_PORT"] = "12355"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
-def setup_trainers(filters, rank=0, weights=[], schedule=False, do_ddp=False, load=None):
-  plane2_net = seresnet(nfilters=filters)
+def setup_trainers(filters, rank=0, weights=[], schedule=False, do_ddp=False, load=None, plane2=True):
+  plane2_net = seresnet(nfilters=filters) if plane2 else full_seresnet(nfilters=filters, ntimes=500)
   if torch.cuda.is_available():
     print('Found cuda. Sending to gpu', rank)
     plane2_net.to(rank)
+    print(next(plane2_net.parameters()).device)
 
   if len(weights) == 0:
     print('Not weighting') 
@@ -214,7 +216,7 @@ def pad_output(preds):
 
 def train(rank: int, filters, world_size: int, dataset, validate=False,
           batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10,
-          weights=[], schedule=False, load=None):
+          weights=[], schedule=False, load=None, plane2=True):
 
   ddp_setup(rank, world_size)
 
@@ -227,7 +229,8 @@ def train(rank: int, filters, world_size: int, dataset, validate=False,
       weights,
       schedule,
       do_ddp=True,
-      load=load)
+      load=load,
+      plane2=plane2)
 
   #Set up outputs
   losses = []
@@ -291,13 +294,14 @@ if __name__ == '__main__':
   parser.add_argument('--cp_freq', type=int, default=10)
   parser.add_argument('--schedule', action='store_true')
   parser.add_argument('--load', type=str, default=None)
+  parser.add_argument('--all_planes', action='store_false')
   args = parser.parse_args()
 
 
   pdsp_data = process_hits.PDSPData(maxtime=500, linked=True)
   pdsp_data.load_h5(args.f)
   pdsp_data.clean_events()
-  pdsp_dataset = PDSPDataset(pdsp_data)
+  pdsp_dataset = PDSPDataset(pdsp_data, plane_2=args.all_planes)
   print(pdsp_dataset.pdsp_data.get_sample_weights())
 
   world_size = torch.cuda.device_count() if torch.cuda.is_available else 1
@@ -316,5 +320,6 @@ if __name__ == '__main__':
       (pdsp_dataset.pdsp_data.get_sample_weights() if args.weight else []),
       args.schedule,
       args.load,
+      args.all_planes,
     ), nprocs=world_size)
 

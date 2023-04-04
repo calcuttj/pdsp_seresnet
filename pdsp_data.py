@@ -29,3 +29,9 @@ class PDSPDataset(Dataset):
     if self.plane_2:
       data = self.pdsp_data.make_plane(2, use_width=self.use_width)
       return (data.reshape((1, *data.shape)), truth)
+    else:
+      data = np.zeros((3, self.pdsp_data.maxtime, 800))
+      data[0, :, :] = self.pdsp_data.make_plane(0, use_width=self.use_width)
+      data[1, :, :] = self.pdsp_data.make_plane(1, use_width=self.use_width)
+      data[2, :, :] = self.pdsp_data.make_plane(2, use_width=self.use_width, pad2=True)
+      return (data, truth)

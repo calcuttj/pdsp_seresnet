@@ -164,7 +164,10 @@ class SEResnetPDSP(nn.Module):
 
     self.nwires = nwires
     #1 stage1 block for each
-    self.stage1 = [Stage1Block() for i in nwires]
+    #self.stage1 = [Stage1Block() for i in nwires]
+    self.stage1_plane0 = Stage1Block()
+    self.stage1_plane1 = Stage1Block()
+    self.stage1_plane2 = Stage1Block()
 
     self.stage1_shapes = [
       conv_output_shape(
@@ -172,18 +175,27 @@ class SEResnetPDSP(nn.Module):
         kernel_size=3, stride=2
       ) for nw in nwires
     ]
+    print('Stage1 Shapes:', self.stage1_shapes)
 
     #3 stage 2 blocks for each branch
     #do not increase filters here
-    self.stage2 = [
+    #self.stage2 = [
       #NBlock(3, (ntimes, nwires[i]), 64, 64) for i in range(len(nwires))
-      NBlock(3, self.stage1_shapes[i], 64, 64) for i in range(len(nwires))
-    ]
-
-    self.stage1_2_layers = [
-      #nn.Sequential(s1) for s1, s2 in zip(self.stage1, self.stage2)
-      nn.Sequential(s1, s2) for s1, s2 in zip(self.stage1, self.stage2)
-    ]
+    #  NBlock(3, self.stage1_shapes[i], 64, 64) for i in range(len(nwires))
+    #]
+    self.stage2_plane0 = NBlock(3, self.stage1_shapes[0], 64, 64)
+    self.stage2_plane1 = NBlock(3, self.stage1_shapes[1], 64, 64)
+    self.stage2_plane2 = NBlock(3, self.stage1_shapes[2], 64, 64)
+    #self.stage1_2_layers = [
+    #  #nn.Sequential(s1) for s1, s2 in zip(self.stage1, self.stage2)
+    #  nn.Sequential(s1, s2) for s1, s2 in zip(self.stage1, self.stage2)
+    #]
+    self.stage1_2_plane0_layers = nn.Sequential(self.stage1_plane0,
+                                                 self.stage2_plane0)
+    self.stage1_2_plane1_layers = nn.Sequential(self.stage1_plane1,
+                                                 self.stage2_plane1)
+    self.stage1_2_plane2_layers = nn.Sequential(self.stage1_plane2,
+                                                 self.stage2_plane2)
 
     ##use plane 0 -- plane 2 will be padded to its size
     self.stage3n_shapes = [self.stage1_shapes[0]]
@@ -226,27 +238,36 @@ class SEResnetPDSP(nn.Module):
     plane2_in = x[:, 2, :, p2_start_initial:-p2_start_initial]
     plane2_in = plane2_in.reshape(x.shape[0], 1, *plane2_in.shape[1:])
     planes = [plane0_in, plane1_in, plane2_in]
-    print(plane0_in.shape)
+    #print(plane0_in.shape)
 
-    print('Stages 1 & 2')
+    #print('Stages 1 & 2')
     stage1_outs = []
-    for layer,x in zip(self.stage1_2_layers, planes):
-      stage1_outs.append(layer(x))
+    #for layer,x in zip(self.stage1_2_layers, planes):
+    #  stage1_outs.append(layer(x))
+    stage1_out_plane0 = self.stage1_plane0(planes[0])
+    #print(stage1_out_plane0.shape)
+    stage2_out_plane0 = self.stage2_plane0(stage1_out_plane0)
+    #print(stage2_out_plane0.shape)
+    stage1_outs.append(self.stage1_2_plane0_layers(planes[0]))
+    stage1_outs.append(self.stage1_2_plane1_layers(planes[1]))
+    stage1_outs.append(self.stage1_2_plane2_layers(planes[2]))
 
-    print('Done')
+    #print('Done')
 
     #y = self.stage1_2_layers[2](x)
 
-    print('Padding')
+    #print('Padding')
     stage1_p2_pad = torch.zeros(x.shape[0], 64, *self.stage1_shapes[0])
-    print(stage1_p2_pad.shape)
+    #print(stage1_p2_pad.shape)
     p2_start = (self.stage1_shapes[0][1] - self.stage1_shapes[2][1])//2
 
     stage1_p2_pad[:, :, :, p2_start:-p2_start] = stage1_outs[2]
-    stage1_outs = [stage1_outs[0], stage1_outs[1], stage1_p2_pad]
+    stage1_p2_pad.to(stage1_outs[2].get_device())
+    stage1_outs = [stage1_outs[0], stage1_outs[1], stage1_p2_pad.to(stage1_outs[2].get_device())]
+    for s in stage1_outs: print(s.get_device())
     y = torch.cat(stage1_outs, 1)
 
-    print(y.shape)
+    #print(y.shape)
     y = self.stage3_layers(y)
 
     y = self.final_layers(y)
@@ -317,7 +338,7 @@ class SEResnetPDSP_Plane2(nn.Module):
 
     '''print('Stages 1 & 2')
     stage1_outs = []
-    for layer,x in zip(self.stage1_2_layers, planes):
+    for laye,x in zip(self.stage1_2_layers, planes):
       stage1_outs.append(layer(x))
 
     print('Done')
