@@ -40,15 +40,20 @@ def get_splits(size, fracs=[.9, .1]):
   results.append(size - results[0])
   return results
 
-def make_loaders(dataset, batch_size=32, validate=False):
+def make_loaders(dataset, batch_size=32, validate=False, random=True):
 
   if validate:
-    from torch.utils.data import random_split
     print(len(dataset))
     splits = get_splits(len(dataset)) 
     print(splits)
-    train_dataset, val_dataset = random_split(
-        dataset, splits)
+    if random:  
+      from torch.utils.data import random_split
+      train_dataset, val_dataset = random_split(
+          dataset, splits)
+    else:
+      train_dataset = dataset[:splits[0]]
+      val_dataset = dataset[splits[0]:]
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -216,12 +221,14 @@ def pad_output(preds):
 
 def train(rank: int, filters, world_size: int, dataset, validate=False,
           batch_size=32, epochs=1, save=False, max_iter=-1, save_every=10,
-          weights=[], schedule=False, load=None, plane2=True):
+          weights=[], schedule=False, load=None, plane2=True, random=True):
 
   ddp_setup(rank, world_size)
 
   #Get train and validate (if available) data loaders
-  train_loader, val_loader = make_loaders(dataset, batch_size=batch_size, validate=validate)
+  train_loader, val_loader = make_loaders(
+      dataset, batch_size=batch_size, validate=validate,
+      random)
 
   model, loss_fn, optimizer, scheduler = setup_trainers(
       filters,
@@ -295,6 +302,7 @@ if __name__ == '__main__':
   parser.add_argument('--schedule', action='store_true')
   parser.add_argument('--load', type=str, default=None)
   parser.add_argument('--all_planes', action='store_false')
+  parser.add_argument('--static', action='store_false')
   args = parser.parse_args()
 
 
@@ -321,5 +329,6 @@ if __name__ == '__main__':
       args.schedule,
       args.load,
       args.all_planes,
+      args.static,
     ), nprocs=world_size)
 
